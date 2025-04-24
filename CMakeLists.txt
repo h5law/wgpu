@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.13)
 
-project(wgpu_native)
+set(PROJECT_VERSION "0.1.1")
+project(wgpu_native VERSION ${PROJECT_VERSION})
+
+set(CMAKE_C_STANDARD "11")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wpedantic")
 
 list( APPEND CMAKE_INCLUDE_PATH ${CMAKE_PREFIX_PATH}/include )
 list( APPEND CMAKE_LIBRARY_PATH ${CMAKE_PREFIX_PATH}/lib )
