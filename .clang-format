@@ -1,0 +1,32 @@
+---
+UseTab: Never
+IndentWidth: 4
+ColumnLimit: 80
+ContinuationIndentWidth: 8
+IndentCaseLabels: false
+
+AlignAfterOpenBracket: Align
+BraceWrapping:
+  AfterFunction: true
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterStruct: false
+  AfterUnion: false
+AlwaysBreakAfterReturnType: None
+BreakBeforeBraces: Linux
+
+PointerAlignment: Right
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInCStyleCastParentheses: true
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignConsecutiveMacros: true
+AlignTrailingComments: true
+
+MaxEmptyLinesToKeep: 1
