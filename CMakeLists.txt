@@ -40,8 +40,6 @@ install(FILES
     ${CMAKE_CURRENT_LIST_DIR}/extern/dawn/lib/cmake/DawnConfig.cmake
     DESTINATION ${CMAKE_CURRENT_LIST_DIR}/extern/dawn/lib
 )
-find_package(Dawn REQUIRED)
-message(STATUS "dawn libwebgpu_dawn library found")
 
 add_executable(adapter_info src/adapter_info.c)
 target_link_libraries(adapter_info ${DAWN_SHARED_LIB})
