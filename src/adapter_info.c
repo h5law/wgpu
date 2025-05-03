@@ -17,78 +17,58 @@
  * 3. This notice may not be removed or altered from any source distribution.
  */
 
-#include <_time.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
-#include <dawn/webgpu.h>
+#include <glfw/glfw3.h>
 
-#include "feature_names.h"
-
-void callback(WGPURequestAdapterStatus status, WGPUAdapter adapter,
-              struct WGPUStringView message, void *userdata1, void *userdata2)
-{
-    if (status != WGPURequestAdapterStatus_Success) {
-        fprintf(stderr, "Request Adapter callback not successfull: %s\n",
-                message.data);
-        return;
-    }
-    memmove(userdata1, &adapter, sizeof(WGPUAdapter));
-}
+#include "utils.h"
 
 int main(int argc, char *argv[])
 {
-    WGPUInstanceDescriptor instanceDesc          = {0};
-    instanceDesc.capabilities.timedWaitAnyEnable = true;
-    WGPUInstance instance = wgpuCreateInstance(&instanceDesc);
-    if (instance == NULL) {
-        fprintf(stderr, "Unable to create WGPU instance\n");
+    WGPUDevice device = create_general_device();
+    if (device == NULL) {
+        fprintf(stderr, "Unable to get general device info\n");
         return EXIT_FAILURE;
     }
 
-    WGPURequestAdapterOptions options = {0};
-    WGPUAdapter               adapter;
-
-    WGPURequestAdapterCallbackInfo callbackInfo = {0};
-    callbackInfo.mode                           = WGPUCallbackMode_WaitAnyOnly;
-    callbackInfo.userdata1                      = &adapter;
-    callbackInfo.callback = ( WGPURequestAdapterCallback )callback;
-
-    WGPUFuture future =
-            wgpuInstanceRequestAdapter(instance, &options, callbackInfo);
-    WGPUFutureWaitInfo futureInfo = {.future = future, .completed = false};
-    WGPUWaitStatus     waitStatus =
-            wgpuInstanceWaitAny(instance, 1, &futureInfo, UINT64_MAX);
-
-    struct timespec ts;
-    ts.tv_sec  = 0;
-    ts.tv_nsec = 200 * 1000;
-    while (!futureInfo.completed) {
-        printf("Waiting for future to complete...\n");
-        nanosleep(&ts, NULL);
-    }
-
-    if (waitStatus != WGPUWaitStatus_Success) {
-        fprintf(stderr, "Unsuccessful instance wait any call\n");
-        return EXIT_FAILURE;
-    }
-    if (callbackInfo.userdata1 == NULL) {
-        fprintf(stderr, "Unable to get adapter from instance\n");
-        return EXIT_FAILURE;
-    }
-
-    WGPUDawnAdapterPropertiesPowerPreference power_props =
-            WGPU_DAWN_ADAPTER_PROPERTIES_POWER_PREFERENCE_INIT;
-    WGPUAdapterInfo adapterInfo = {0};
-    adapterInfo.nextInChain     = ( WGPUChainedStruct * )&power_props;
-    WGPUStatus infoStatus       = wgpuAdapterGetInfo(adapter, &adapterInfo);
+    WGPUAdapterInfo adapterInfo = WGPU_ADAPTER_INFO_INIT;
+    WGPUStatus      infoStatus = wgpuDeviceGetAdapterInfo(device, &adapterInfo);
     if (infoStatus != WGPUStatus_Success) {
         fprintf(stderr, "Unable to get adapter info\n");
         return EXIT_FAILURE;
     }
 
+    GLFWwindow *window = get_glfw_window();
+
+    // WGPUSurface surface = get_surface();
+
+    // if ((( WGPUDeviceDescriptor * )adapterInfo.nextInChain) != NULL) {
+    //     char dbuf[(( WGPUDeviceDescriptor * )adapterInfo.nextInChain)
+    //                       ->label.length +
+    //               1];
+    //     snprintf(dbuf,
+    //              (( WGPUDeviceDescriptor * )adapterInfo.nextInChain)
+    //                              ->label.length +
+    //                      1,
+    //              "%s",
+    //              (( WGPUDeviceDescriptor * )adapterInfo.nextInChain)
+    //                      ->label.data);
+    //     printf("Device Descriptor Label: \t\t%s\n", dbuf);
+    // }
+
+    size_t      len = 0;
+    const char *backendType =
+            get_backend_type_from_code(adapterInfo.backendType, &len);
+    printf("Backend Type: \t\t%s\n", backendType);
+    len = 0;
+    const char *adapterType =
+            get_backend_type_from_code(adapterInfo.adapterType, &len);
+    printf("Adapter Type: \t\t%s\n", adapterType);
+    len = 0;
     printf("VendorID: \t\t0x%02x\n", adapterInfo.vendorID);
     char buf[adapterInfo.vendor.length + 1];
     snprintf(buf, adapterInfo.vendor.length + 1, "%s", adapterInfo.vendor.data);
@@ -107,13 +87,36 @@ int main(int argc, char *argv[])
              adapterInfo.description.data);
     printf("Description: \t\t%s\n", buf4);
 
-    WGPUSupportedFeatures features = {0};
-    wgpuAdapterGetFeatures(adapter, &features);
+    WGPUSupportedFeatures features = WGPU_SUPPORTED_FEATURES_INIT;
+    wgpuDeviceGetFeatures(device, &features);
     for (size_t i = 0; i < features.featureCount; ++i) {
-        printf("Supports feature: \t%s(0x%02x)\n",
-               _FEATURE_NAME_FROM_CODE(features.features[i]),
+        size_t      len = 0;
+        const char *featName =
+                get_feature_name_from_code(features.features[i], &len);
+        printf("Device feature: \t%s(0x%02x)\n", featName,
                features.features[i]);
     }
+    WGPUAdapter adapter = wgpuDeviceGetAdapter(device);
+    features            = WGPU_SUPPORTED_FEATURES_INIT;
+    wgpuAdapterGetFeatures(adapter, &features);
+    for (size_t i = 0; i < features.featureCount; ++i) {
+        size_t      len = 0;
+        const char *featName =
+                get_feature_name_from_code(features.features[i], &len);
+        printf("Adapter feature: \t%s(0x%02x)\n", featName,
+               features.features[i]);
+    }
+
+    while (!glfwWindowShouldClose(window)) {
+        // Check whether the user clicked on the close button (and any other
+        // mouse/key event, which we don't use so far)
+        glfwPollEvents();
+    }
+
+    // wgpuSurfaceRelease(surface);
+    wgpuDeviceRelease(device);
+    glfwDestroyWindow(window);
+    glfwTerminate();
 
     return EXIT_SUCCESS;
 }

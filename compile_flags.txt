@@ -3,3 +3,9 @@
 -Wall
 -Werror
 -Wpedantic
+-lwebgpu_dawn
+-lglfw3
+-framework Cocoa
+-framework QuartzCore
+-framework Metal
+-framework IOKit

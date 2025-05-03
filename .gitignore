@@ -1,4 +1,4 @@
 .Trash
 .DS_Store
+bin/*
 out/*
-extern/dawn/**/*
