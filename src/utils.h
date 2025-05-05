@@ -21,7 +21,7 @@
 #define WGPU_UTILS_H
 
 #include <dawn/webgpu.h>
-#include <glfw/glfw3.h>
+#include <GLFW/glfw3.h>
 
 int  init_app(int argc, const char **argv);
 int  should_quit();

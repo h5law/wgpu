@@ -17,7 +17,6 @@
  * 3. This notice may not be removed or altered from any source distribution.
  */
 
-#include <CoreFoundation/CFBase.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -47,8 +46,9 @@
 #define WGPU_TARGET WGPU_TARGET_LINUX_X11
 #endif
 
-#include <glfw/glfw3.h>
+#include <GLFW/glfw3.h>
 #if WGPU_TARGET == WGPU_TARGET_MACOS
+#define _GLFW_COCOA
 #define GLFW_EXPOSE_NATIVE_COCOA
 #elif WGPU_TARGET == WGPU_TARGET_LINUX_X11
 #define GLFW_EXPOSE_NATIVE_X11
@@ -59,9 +59,10 @@
 #endif
 
 #ifndef __EMSCRIPTEN__
-#include <glfw/glfw3native.h>
+#include <GLFW/glfw3native.h>
 #endif
 
+#include "glfw3webgpu.h"
 #include "utils.h"
 
 #ifndef _BACKEND_TYPE_FROM_CODE
@@ -192,9 +193,10 @@ const char *get_adapter_type_from_code(unsigned long code, size_t *len)
     return type;
 }
 
-GLFWwindow        *window = NULL;
+static GLFWwindow *window = NULL;
 const unsigned int xWin   = 640;
 const unsigned int yWin   = 480;
+static WGPUSurface surface;
 
 enum command_buffer_t {
     None,
@@ -210,8 +212,6 @@ enum command_buffer_t {
 
 static enum command_buffer_t cmd_buf_t =
         None; /* Terrible; // When implemented */
-static WGPUInstance instance;
-static WGPUSurface  surface;
 
 void error_callback(int code, const char *description)
 {
@@ -226,7 +226,8 @@ void adapter_callback(WGPURequestAdapterStatus status, WGPUAdapter adapter,
     if (status != WGPURequestAdapterStatus_Success) {
         char mbuf[message.length + 1];
         snprintf(mbuf, message.length + 1, "%s", message.data);
-        fprintf(stderr, "Request Adapter callback not successfull: %s\n", mbuf);
+        fprintf(stderr, "[ERR] Request Adapter callback not successfull: %s\n",
+                mbuf);
         return;
     }
     memmove(userdata1, &adapter, sizeof(WGPUAdapter));
@@ -236,12 +237,6 @@ void logging_callback(WGPULoggingType type, struct WGPUStringView message,
                       WGPU_NULLABLE void *userdata1,
                       WGPU_NULLABLE void *userdata2)
 {
-    WGPUStringView label = {0};
-    if (userdata1 != NULL)
-        label = *( WGPUStringView * )userdata1;
-    char lbuf[label.length + 1];
-    snprintf(lbuf, label.length + 1, "%s", label.data);
-
     char mbuf[message.length + 1];
     snprintf(mbuf, message.length + 1, "%s", message.data);
 
@@ -249,17 +244,17 @@ void logging_callback(WGPULoggingType type, struct WGPUStringView message,
     case WGPULoggingType_Warning:
     case WGPULoggingType_Error:
     case WGPULoggingType_Force32:
-        fprintf(stderr, "[%s] (%s)\t%s\n",
+        fprintf(stderr, "[%s] (%d)\t%s\n",
                 ((type == WGPULoggingType_Warning)   ? "WARN"
                  : (type == WGPULoggingType_Force32) ? "FRC32"
                                                      : "ERR"),
-                lbuf, mbuf);
+                *( int * )userdata1, mbuf);
         break;
     case WGPULoggingType_Info:
     case WGPULoggingType_Verbose:
-        printf("[%s] (%s)\t%s\n",
-               ((type == WGPULoggingType_Verbose) ? "VERB" : "INFO"), lbuf,
-               mbuf);
+        printf("[%s] (%d)\t%s\n",
+               ((type == WGPULoggingType_Verbose) ? "VERB" : "INFO"),
+               *( int * )userdata1, mbuf);
         break;
     }
 }
@@ -269,16 +264,10 @@ void exception_callback(const WGPUDevice *device, WGPUErrorType type,
                         WGPU_NULLABLE void   *userdata1,
                         WGPU_NULLABLE void   *userdata2)
 {
-    WGPUStringView label = {0};
-    if (userdata1 != NULL)
-        label = *( WGPUStringView * )userdata1;
-    char lbuf[label.length + 1];
-    snprintf(lbuf, label.length + 1, "%s", label.data);
-
     char mbuf[message.length + 1];
     snprintf(mbuf, message.length + 1, "%s", message.data);
 
-    fprintf(stderr, "[U-ERR] (%s)\t", lbuf);
+    fprintf(stderr, "[U-ERR] (%d)\t", *( int * )userdata1);
 
     switch (type) {
     case WGPUErrorType_NoError:
@@ -308,16 +297,10 @@ void lost_callback(const WGPUDevice *device, WGPUDeviceLostReason reason,
                    struct WGPUStringView message, WGPU_NULLABLE void *userdata1,
                    WGPU_NULLABLE void *userdata2)
 {
-    WGPUStringView label = {0};
-    if (userdata1 != NULL)
-        label = *( WGPUStringView * )userdata1;
-    char lbuf[label.length + 1];
-    snprintf(lbuf, label.length + 1, "%s", label.data);
-
     char mbuf[message.length + 1];
     snprintf(mbuf, message.length + 1, "%s", message.data);
 
-    fprintf(stderr, "[WARN] (%s)\t Device Lost: ", lbuf);
+    fprintf(stderr, "[WARN] (%d)\t Device Lost: ", *( int * )userdata1);
 
     switch (reason) {
     case WGPUDeviceLostReason_Unknown:
@@ -348,9 +331,6 @@ WGPUDevice create_general_device()
     }
     glfwSetErrorCallback(error_callback);
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_NATIVE_CONTEXT_API);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     window = glfwCreateWindow(xWin, yWin, "window", NULL, NULL);
     if (window == NULL) {
@@ -366,7 +346,7 @@ WGPUDevice create_general_device()
 
     WGPUInstanceDescriptor instanceDesc = WGPU_INSTANCE_DESCRIPTOR_INIT;
     instanceDesc.capabilities.timedWaitAnyEnable = true;
-    instance = wgpuCreateInstance(&instanceDesc);
+    WGPUInstance instance = wgpuCreateInstance(&instanceDesc);
     if (instance == NULL) {
         fprintf(stderr, "[ERR] Unable to create WGPU instance\n");
         glfwDestroyWindow(window);
@@ -374,29 +354,40 @@ WGPUDevice create_general_device()
         return NULL;
     }
 
-    WGPURequestAdapterOptions options = {0};
-    WGPUAdapter               adapter;
+    WGPUSurface backendSurface = glfwCreateWindowWGPUSurface(instance, window);
+    // if (surface == NULL) {
+    //     fprintf(stderr, "[ERR] Unable to create surface for window\n");
+    //     glfwDestroyWindow(window);
+    //     glfwTerminate();
+    //     return NULL;
+    // }
 
+    WGPURequestAdapterOptions options = {0};
+    options.nextInChain               = NULL;
+    options.compatibleSurface         = backendSurface;
+
+#ifdef GLFW_EXPOSE_NATIVE_COCOA
+    options.backendType = WGPUBackendType_Metal;
+#endif /* GLFW_EXPOSE_NATIVE_COCOA */
+
+    WGPUAdapter                    adapter      = {0};
     WGPURequestAdapterCallbackInfo callbackInfo = {0};
     callbackInfo.mode                           = WGPUCallbackMode_WaitAnyOnly;
     callbackInfo.userdata1                      = &adapter;
-    callbackInfo.callback = ( WGPURequestAdapterCallback )adapter_callback;
+    callbackInfo.callback                       = adapter_callback;
 
     WGPUFuture future =
             wgpuInstanceRequestAdapter(instance, &options, callbackInfo);
     WGPUFutureWaitInfo futureInfo = {.future = future, .completed = false};
-
-    WGPUWaitStatus waitStatus =
+    WGPUWaitStatus     waitStatus =
             wgpuInstanceWaitAny(instance, 1, &futureInfo, UINT64_MAX);
-
     struct timespec ts;
     ts.tv_sec  = 0;
     ts.tv_nsec = 200 * 1000;
     while (!futureInfo.completed) {
-        printf("Waiting for future to complete...\n");
+        printf("[ERR] Waiting for future to complete...\n");
         nanosleep(&ts, NULL);
     }
-
     if (waitStatus != WGPUWaitStatus_Success) {
         fprintf(stderr, "[ERR] Unsuccessful instance wait any call\n");
         glfwDestroyWindow(window);
@@ -410,12 +401,8 @@ WGPUDevice create_general_device()
         return NULL;
     }
 
-    WGPUDawnAdapterPropertiesPowerPreference power_props =
-            WGPU_DAWN_ADAPTER_PROPERTIES_POWER_PREFERENCE_INIT;
-    power_props.powerPreference = WGPUPowerPreference_HighPerformance;
     WGPUAdapterInfo adapterInfo = WGPU_ADAPTER_INFO_INIT;
-    adapterInfo.nextInChain     = ( WGPUChainedStruct * )&power_props;
-    WGPUStatus infoStatus       = wgpuAdapterGetInfo(adapter, &adapterInfo);
+    WGPUStatus      infoStatus  = wgpuAdapterGetInfo(adapter, &adapterInfo);
     if (infoStatus != WGPUStatus_Success) {
         fprintf(stderr, "[ERR] Unable to get adapter info\n");
         glfwDestroyWindow(window);
@@ -423,44 +410,17 @@ WGPUDevice create_general_device()
         return NULL;
     }
 
-    // printf("VendorID: \t\t0x%02x\n", adapterInfo.vendorID);
-    // char buf[adapterInfo.vendor.length + 1];
-    // snprintf(buf, adapterInfo.vendor.length + 1, "%s",
-    // adapterInfo.vendor.data); printf("Vendor: \t\t%s\n", buf); char
-    // buf2[adapterInfo.architecture.length + 1]; snprintf(buf2,
-    // adapterInfo.architecture.length + 1, "%s",
-    //          adapterInfo.architecture.data);
-    // printf("Architecture: \t\t%s\n", buf2);
-    // printf("DeviceID: \t\t0x%02x\n", adapterInfo.deviceID);
-    // char buf3[adapterInfo.device.length + 1];
-    // snprintf(buf3, adapterInfo.device.length + 1, "%s",
-    //          adapterInfo.device.data);
-    // printf("Device: \t\t%s\n", buf3);
-    // char buf4[adapterInfo.description.length + 1];
-    // snprintf(buf4, adapterInfo.description.length + 1, "%s",
-    //          adapterInfo.description.data);
-    // printf("Description: \t\t%s\n", buf4);
-    //
-    // WGPUSupportedFeatures features = {0};
-    // wgpuAdapterGetFeatures(adapter, &features);
-    // for (size_t i = 0; i < features.featureCount; ++i) {
-    //     size_t len = 0;
-    //     printf("Supports feature: \t%s(0x%02x)\n",
-    //            get_feature_name_from_code(features.features[i], &len),
-    //            features.features[i]);
-    // }
-
     WGPUDeviceDescriptor deviceDesc = WGPU_DEVICE_DESCRIPTOR_INIT;
 
     WGPUUncapturedErrorCallbackInfo exceptionInfo =
             WGPU_UNCAPTURED_ERROR_CALLBACK_INFO_INIT;
     exceptionInfo.callback                 = exception_callback;
-    exceptionInfo.userdata1                = &deviceDesc.label;
+    exceptionInfo.userdata1                = &adapterInfo.deviceID;
     deviceDesc.uncapturedErrorCallbackInfo = exceptionInfo;
     WGPUDeviceLostCallbackInfo lostInfo = WGPU_DEVICE_LOST_CALLBACK_INFO_INIT;
-    lostInfo.mode                       = WGPUCallbackMode_WaitAnyOnly;
+    lostInfo.mode                       = WGPUCallbackMode_AllowSpontaneous;
     lostInfo.callback                   = lost_callback;
-    lostInfo.userdata1                  = &deviceDesc.label;
+    lostInfo.userdata1                  = &adapterInfo.deviceID;
     deviceDesc.deviceLostCallbackInfo   = lostInfo;
 
     WGPUDevice backendDevice = wgpuAdapterCreateDevice(adapter, &deviceDesc);
@@ -471,54 +431,31 @@ WGPUDevice create_general_device()
         return NULL;
     }
 
-    // WGPUChainedStruct          *surfaceChainedDesc = NULL;
-    // WGPUSurfaceSourceMetalLayer metal_layer;
-    // switch (adapterInfo.backendType) {
-    // case WGPUBackendType_Null:
-    // case WGPUBackendType_Undefined:
-    //     fprintf(stderr, "[ERR] No backend type defined in adapter\n");
-    //     glfwDestroyWindow(window);
-    //     glfwTerminate();
-    //     return NULL;
-    //     break;
-    // case WGPUBackendType_Metal:
-    //     metal_layer        = WGPU_SURFACE_SOURCE_METAL_LAYER_INIT;
-    //     metal_layer.layer  = (window);
-    //     surfaceChainedDesc = ( WGPUChainedStruct * )&metal_layer;
-    //     break;
-    // default:
-    //     break;
-    // }
-    // WGPUSurfaceDescriptor surfaceDesc = WGPU_SURFACE_DESCRIPTOR_INIT;
-    // surfaceDesc.nextInChain           = surfaceChainedDesc;
-    //
     // WGPUSurfaceConfiguration surfaceConfig = WGPU_SURFACE_CONFIGURATION_INIT;
     // surfaceConfig.device                   = backendDevice;
-
-    /*
-     * "Where you once made a new swapchain, you now call surface.configure()
-     * and your acquire_next_frame calls also go on the surface."
-     */
-    // WGPUSurface backendSurface =
-    //         wgpuInstanceCreateSurface(instance, &surfaceDesc);
+    // surfaceConfig.width                    = xWin;
+    // surfaceConfig.height                   = yWin;
     // wgpuSurfaceConfigure(backendSurface, &surfaceConfig);
 
     WGPUDevice device = NULL;
 
-    switch (cmd_buf_t) {
+    // switch (cmd_buf_t) {
     // case None:
-    case None:
-        device = backendDevice;
-        // surface = backendSurface;
-        break;
-    case Terrible:
-        break;
-    };
+    // case None:
+    device  = backendDevice;
+    surface = backendSurface;
+    //     break;
+    // case Terrible:
+    //     break;
+    // };
 
     WGPULoggingCallbackInfo loggingInfo = WGPU_LOGGING_CALLBACK_INFO_INIT;
     loggingInfo.callback                = logging_callback;
-    loggingInfo.userdata1               = &deviceDesc.label;
+    loggingInfo.userdata1               = &adapterInfo.deviceID;
     wgpuDeviceSetLoggingCallback(device, loggingInfo);
+
+    wgpuInstanceRelease(instance);
+    wgpuAdapterRelease(adapter);
 
     return device;
 }

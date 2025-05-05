@@ -23,7 +23,8 @@
 #include <string.h>
 #include <time.h>
 
-#include <glfw/glfw3.h>
+#include <GLFW/glfw3.h>
+#include <webgpu/webgpu.h>
 
 #include "utils.h"
 
@@ -31,7 +32,7 @@ int main(int argc, char *argv[])
 {
     WGPUDevice device = create_general_device();
     if (device == NULL) {
-        fprintf(stderr, "Unable to get general device info\n");
+        fprintf(stderr, "Unable to get general device\n");
         return EXIT_FAILURE;
     }
 
@@ -41,24 +42,8 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Unable to get adapter info\n");
         return EXIT_FAILURE;
     }
-
-    GLFWwindow *window = get_glfw_window();
-
-    // WGPUSurface surface = get_surface();
-
-    // if ((( WGPUDeviceDescriptor * )adapterInfo.nextInChain) != NULL) {
-    //     char dbuf[(( WGPUDeviceDescriptor * )adapterInfo.nextInChain)
-    //                       ->label.length +
-    //               1];
-    //     snprintf(dbuf,
-    //              (( WGPUDeviceDescriptor * )adapterInfo.nextInChain)
-    //                              ->label.length +
-    //                      1,
-    //              "%s",
-    //              (( WGPUDeviceDescriptor * )adapterInfo.nextInChain)
-    //                      ->label.data);
-    //     printf("Device Descriptor Label: \t\t%s\n", dbuf);
-    // }
+    GLFWwindow *window  = get_glfw_window();
+    WGPUSurface surface = get_surface();
 
     size_t      len = 0;
     const char *backendType =
@@ -113,8 +98,6 @@ int main(int argc, char *argv[])
         glfwPollEvents();
     }
 
-    // wgpuSurfaceRelease(surface);
-    wgpuDeviceRelease(device);
     glfwDestroyWindow(window);
     glfwTerminate();
 
