@@ -1,9 +1,11 @@
 # wgpu
 
-Minor examples and explorations of Dawn's WebGPU implementation to run and
+Minor examples and explorations of gfx-rs's WebGPU implementation to run and
 execute native platform independent (via WebGPU) GPU code and shader logic.
 
-## Adapter Info
+## Demo
 
-First dive into the `<dawn/webgpu.h>` library by retrieving and printing the
-host machine's GPU device/adapter information at a brief high-level.
+**IN PROGRESS**
+
+Display device and adapter info then spawn a GLFW window to display certain
+WGSL shader code operating natively via WebGPU.
