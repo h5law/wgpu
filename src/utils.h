@@ -20,8 +20,9 @@
 #ifndef WGPU_UTILS_H
 #define WGPU_UTILS_H
 
-#include <dawn/webgpu.h>
 #include <GLFW/glfw3.h>
+#include <wgpu/webgpu.h>
+#include <wgpu/wgpu.h>
 
 int  init_app(int argc, const char **argv);
 int  should_quit();
@@ -30,13 +31,22 @@ void process_events();
 
 GLFWwindow *get_glfw_window();
 
-WGPUDevice      create_general_device();
-WGPUTextureView create_default_depth_stencil_view(WGPUDevice device);
-WGPUSurface     get_surface();
+struct WGPUState {
+    WGPUInstance             instance;
+    WGPUAdapter              adapter;
+    WGPUSurface              surface;
+    WGPUSurfaceConfiguration surfaceConfig;
+    WGPUDevice               device;
+    GLFWwindow              *window;
+};
+struct WGPUState create_general_device();
+WGPUTextureView  create_default_depth_stencil_view(WGPUDevice device);
+WGPUSurface      get_surface();
 
 const char *get_feature_name_from_code(unsigned long code, size_t *len);
 const char *get_adapter_type_from_code(unsigned long code, size_t *len);
 const char *get_backend_type_from_code(unsigned long code, size_t *len);
+void        get_device_limits(WGPULimits limits);
 
 #endif /* ifndef WGPU_UTILS_H */
 

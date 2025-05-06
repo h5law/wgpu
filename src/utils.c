@@ -22,48 +22,22 @@
 #include <string.h>
 #include <time.h>
 
-#include <webgpu/webgpu.h>
+#include <wgpu/webgpu.h>
+#include <wgpu/wgpu.h>
 
-#define WGPU_TARGET_MACOS         1
-#define WGPU_TARGET_LINUX_X11     2
-#define WGPU_TARGET_WINDOWS       3
-#define WGPU_TARGET_LINUX_WAYLAND 4
-#define WGPU_TARGET_EMSCRIPTEN    5
-
-#ifdef __EMSCRIPTEN__
-#define WGPU_TARGET WGPU_TARGET_EMSCRIPTEN
-#endif
-#ifdef _WIN32
-#define WGPU_TARGET WGPU_TARGET_WINDOWS
-#endif
-#ifdef __APPLE__
-#define WGPU_TARGET WGPU_TARGET_MACOS
-#endif
-#ifdef _GLFW_WAYLAND
-#define WGPU_TARGET WGPU_TARGET_LINUX_WAYLAND
-#endif
-#ifdef _GLFW_X11
-#define WGPU_TARGET WGPU_TARGET_LINUX_X11
+#ifdef GLFW_EXPOSE_NATIVE_COCOA
+#include <Foundation/Foundation.h>
+#include <QuartzCore/CAMetalLayer.h>
 #endif
 
 #include <GLFW/glfw3.h>
-#if WGPU_TARGET == WGPU_TARGET_MACOS
-#define _GLFW_COCOA
-#define GLFW_EXPOSE_NATIVE_COCOA
-#elif WGPU_TARGET == WGPU_TARGET_LINUX_X11
-#define GLFW_EXPOSE_NATIVE_X11
-#elif WGPU_TARGET == WGPU_TARGET_LINUX_WAYLAND
-#define GLFW_EXPOSE_NATIVE_WAYLAND
-#elif WGPU_TARGET == WGPU_TARGET_WINDOWS
-#define GLFW_EXPOSE_NATIVE_WIN32
-#endif
-
-#ifndef __EMSCRIPTEN__
 #include <GLFW/glfw3native.h>
-#endif
 
-#include "glfw3webgpu.h"
 #include "utils.h"
+
+#ifndef LOG_PREFIX
+#define LOG_PREFIX "[WGPU::LOG]"
+#endif /* ifdef LOG_PREFIX */
 
 #ifndef _BACKEND_TYPE_FROM_CODE
 #define _BACKEND_TYPE_FROM_CODE(code)                                          \
@@ -92,7 +66,8 @@
 
 #ifndef _FEATURE_NAME_FROM_CODE
 #define _FEATURE_NAME_FROM_CODE(code)                                          \
-    ((code == 0x00000001)   ? "DepthClipControl"                               \
+    ((code == 0x00000000)   ? "Undefined"                                      \
+     : (code == 0x00000001) ? "DepthClipControl"                               \
      : (code == 0x00000002) ? "Depth32FloatStencil8"                           \
      : (code == 0x00000003) ? "TimestampQuery"                                 \
      : (code == 0x00000004) ? "TextureCompressionBC"                           \
@@ -108,69 +83,75 @@
      : (code == 0x0000000E) ? "Float32Blendable"                               \
      : (code == 0x0000000F) ? "ClipDistances"                                  \
      : (code == 0x00000010) ? "DualSourceBlending"                             \
-     : (code == 0x00000011) ? "Subgroups"                                      \
-     : (code == 0x00000012) ? "CoreFeaturesAndLimits"                          \
-     : (code == 0x00050000) ? "DawnInternalUsages"                             \
-     : (code == 0x00050001) ? "DawnMultiPlanarFormats"                         \
-     : (code == 0x00050002) ? "DawnNative"                                     \
-     : (code == 0x00050003) ? "ChromiumExperimentalTimestampQueryInsidePasses" \
-     : (code == 0x00050004) ? "ImplicitDeviceSynchronization"                  \
-     : (code == 0x00050005) ? "ChromiumExperimentalImmediateData"              \
-     : (code == 0x00050006) ? "TransientAttachments"                           \
-     : (code == 0x00050007) ? "MSAARenderToSingleSampled"                      \
-     : (code == 0x00050008) ? "D3D11MultithreadProtected"                      \
-     : (code == 0x00050009) ? "ANGLETextureSharing"                            \
-     : (code == 0x0005000A) ? "PixelLocalStorageCoherent"                      \
-     : (code == 0x0005000B) ? "PixelLocalStorageNonCoherent"                   \
-     : (code == 0x0005000C) ? "Unorm16TextureFormats"                          \
-     : (code == 0x0005000D) ? "Snorm16TextureFormats"                          \
-     : (code == 0x0005000E) ? "MultiPlanarFormatExtendedUsages"                \
-     : (code == 0x0005000F) ? "MultiPlanarFormatP010"                          \
-     : (code == 0x00050010) ? "HostMappedPointer"                              \
-     : (code == 0x00050011) ? "MultiPlanarRenderTargets"                       \
-     : (code == 0x00050012) ? "MultiPlanarFormatNv12a"                         \
-     : (code == 0x00050013) ? "FramebufferFetch"                               \
-     : (code == 0x00050014) ? "BufferMapExtendedUsages"                        \
-     : (code == 0x00050015) ? "AdapterPropertiesMemoryHeaps"                   \
-     : (code == 0x00050016) ? "AdapterPropertiesD3D"                           \
-     : (code == 0x00050017) ? "AdapterPropertiesVk"                            \
-     : (code == 0x00050018) ? "R8UnormStorage"                                 \
-     : (code == 0x00050019) ? "DawnFormatCapabilities"                         \
-     : (code == 0x0005001A) ? "DawnDrmFormatCapabilities"                      \
-     : (code == 0x0005001B) ? "Norm16TextureFormats"                           \
-     : (code == 0x0005001C) ? "MultiPlanarFormatNv16"                          \
-     : (code == 0x0005001D) ? "MultiPlanarFormatNv24"                          \
-     : (code == 0x0005001E) ? "MultiPlanarFormatP210"                          \
-     : (code == 0x0005001F) ? "MultiPlanarFormatP410"                          \
-     : (code == 0x00050020) ? "SharedTextureMemoryVkDedicatedAllocation"       \
-     : (code == 0x00050021) ? "SharedTextureMemoryAHardwareBuffer"             \
-     : (code == 0x00050022) ? "SharedTextureMemoryDmaBuf"                      \
-     : (code == 0x00050023) ? "SharedTextureMemoryOpaqueFD"                    \
-     : (code == 0x00050024) ? "SharedTextureMemoryZirconHandle"                \
-     : (code == 0x00050025) ? "SharedTextureMemoryDXGISharedHandle"            \
-     : (code == 0x00050026) ? "SharedTextureMemoryD3D11Texture2D"              \
-     : (code == 0x00050027) ? "SharedTextureMemoryIOSurface"                   \
-     : (code == 0x00050028) ? "SharedTextureMemoryEGLImage"                    \
-     : (code == 0x00050029) ? "SharedFenceVkSemaphoreOpaqueFD"                 \
-     : (code == 0x0005002A) ? "SharedFenceSyncFD"                              \
-     : (code == 0x0005002B) ? "SharedFenceVkSemaphoreZirconHandle"             \
-     : (code == 0x0005002C) ? "SharedFenceDXGISharedHandle"                    \
-     : (code == 0x0005002D) ? "SharedFenceMTLSharedEvent"                      \
-     : (code == 0x0005002E) ? "SharedBufferMemoryD3D12Resource"                \
-     : (code == 0x0005002F) ? "StaticSamplers"                                 \
-     : (code == 0x00050030) ? "YCbCrVulkanSamplers"                            \
-     : (code == 0x00050031) ? "ShaderModuleCompilationOptions"                 \
-     : (code == 0x00050032) ? "DawnLoadResolveTexture"                         \
-     : (code == 0x00050033) ? "DawnPartialLoadResolveTexture"                  \
-     : (code == 0x00050034) ? "MultiDrawIndirect"                              \
-     : (code == 0x00050035) ? "DawnTexelCopyBufferRowAlignment"                \
-     : (code == 0x00050036) ? "FlexibleTextureViews"                           \
-     : (code == 0x00050037) ? "ChromiumExperimentalSubgroupMatrix"             \
-     : (code == 0x00050038) ? "SharedFenceEGLSync"                             \
-     : (code == 0x00050039) ? "DawnDeviceAllocatorControl"                     \
      : (code == 0x7FFFFFFF) ? "Force3"                                         \
                             : "UnkownFeature")
 #endif /* ifndef _FEATURE_NAME_FROM_CODE */
+
+#ifndef _DEVICE_LIMITS
+#define _DEVICE_LIMITS(limit)                                                  \
+    printf("Device Limit: \t\tmaxTextureDimension1D(%d)\n",                    \
+           limit.maxTextureDimension1D);                                       \
+    printf("Device Limit: \t\tmaxTextureDimension2D(%d)\n",                    \
+           limit.maxTextureDimension2D);                                       \
+    printf("Device Limit: \t\tmaxTextureDimension3D(%d)\n",                    \
+           limit.maxTextureDimension3D);                                       \
+    printf("Device Limit: \t\tmaxTextureArrayLayers(%d)\n",                    \
+           limit.maxTextureArrayLayers);                                       \
+    printf("Device Limit: \t\tmaxBindGroups(%d)\n", limit.maxBindGroups);      \
+    printf("Device Limit: \t\tmaxBindGroupsPlusVertexBuffers(%d)\n",           \
+           limit.maxBindGroupsPlusVertexBuffers);                              \
+    printf("Device Limit: \t\tmaxBindingsPerBindGroup(%d)\n",                  \
+           limit.maxBindingsPerBindGroup);                                     \
+    printf("Device Limit: "                                                    \
+           "\t\tmaxDynamicUniformBuffersPerPipelineLayout(%d)\n",              \
+           limit.maxDynamicUniformBuffersPerPipelineLayout);                   \
+    printf("Device Limit: "                                                    \
+           "\t\tmaxDynamicStorageBuffersPerPipelineLayout(%d)\n",              \
+           limit.maxDynamicStorageBuffersPerPipelineLayout);                   \
+    printf("Device Limit: \t\tmaxSampledTexturesPerShaderStage(%d)\n",         \
+           limit.maxSampledTexturesPerShaderStage);                            \
+    printf("Device Limit: \t\tmaxSamplersPerShaderStage(%d)\n",                \
+           limit.maxSamplersPerShaderStage);                                   \
+    printf("Device Limit: \t\tmaxStorageBuffersPerShaderStage(%d)\n",          \
+           limit.maxStorageBuffersPerShaderStage);                             \
+    printf("Device Limit: \t\tmaxStorageTexturesPerShaderStage(%d)\n",         \
+           limit.maxStorageTexturesPerShaderStage);                            \
+    printf("Device Limit: \t\tmaxUniformBuffersPerShaderStage(%d)\n",          \
+           limit.maxUniformBuffersPerShaderStage);                             \
+    printf("Device Limit: \t\tmaxUniformBufferBindingSize(%llu)\n",            \
+           limit.maxUniformBufferBindingSize);                                 \
+    printf("Device Limit: \t\tmaxStorageBufferBindingSize(%llu)\n",            \
+           limit.maxStorageBufferBindingSize);                                 \
+    printf("Device Limit: \t\tminUniformBufferOffsetAlignment(%d)\n",          \
+           limit.minUniformBufferOffsetAlignment);                             \
+    printf("Device Limit: \t\tminStorageBufferOffsetAlignment(%d)\n",          \
+           limit.minStorageBufferOffsetAlignment);                             \
+    printf("Device Limit: \t\tmaxVertexBuffers(%d)\n",                         \
+           limit.maxVertexBuffers);                                            \
+    printf("Device Limit: \t\tmaxBufferSize(%llu)\n", limit.maxBufferSize);    \
+    printf("Device Limit: \t\tmaxVertexAttributes(%d)\n",                      \
+           limit.maxVertexAttributes);                                         \
+    printf("Device Limit: \t\tmaxVertexBufferArrayStride(%d)\n",               \
+           limit.maxVertexBufferArrayStride);                                  \
+    printf("Device Limit: \t\tmaxInterStageShaderVariables(%d)\n",             \
+           limit.maxInterStageShaderVariables);                                \
+    printf("Device Limit: \t\tmaxColorAttachments(%d)\n",                      \
+           limit.maxColorAttachments);                                         \
+    printf("Device Limit: \t\tmaxColorAttachmentBytesPerSample(%d)\n",         \
+           limit.maxColorAttachmentBytesPerSample);                            \
+    printf("Device Limit: \t\tmaxComputeWorkgroupStorageSize(%d)\n",           \
+           limit.maxComputeWorkgroupStorageSize);                              \
+    printf("Device Limit: \t\tmaxComputeInvocationsPerWorkgroup(%d)\n",        \
+           limit.maxComputeInvocationsPerWorkgroup);                           \
+    printf("Device Limit: \t\tmaxComputeWorkgroupSizeX(%d)\n",                 \
+           limit.maxComputeWorkgroupSizeX);                                    \
+    printf("Device Limit: \t\tmaxComputeWorkgroupSizeY(%d)\n",                 \
+           limit.maxComputeWorkgroupSizeY);                                    \
+    printf("Device Limit: \t\tmaxComputeWorkgroupSizeZ(%d)\n",                 \
+           limit.maxComputeWorkgroupSizeZ);                                    \
+    printf("Device Limit: \t\tmaxComputeWorkgroupsPerDimension(%d)\n",         \
+           limit.maxComputeWorkgroupsPerDimension);
+#endif /* ifndef _DEVICE_LIMITS */
 
 const char *get_feature_name_from_code(unsigned long code, size_t *len)
 {
@@ -193,10 +174,11 @@ const char *get_adapter_type_from_code(unsigned long code, size_t *len)
     return type;
 }
 
-static GLFWwindow *window = NULL;
-const unsigned int xWin   = 640;
-const unsigned int yWin   = 480;
-static WGPUSurface surface;
+void get_device_limits(WGPULimits limits) { _DEVICE_LIMITS(limits); }
+
+const unsigned int xWin  = 640;
+const unsigned int yWin  = 480;
+struct WGPUState   state = {0};
 
 enum command_buffer_t {
     None,
@@ -219,44 +201,36 @@ void error_callback(int code, const char *description)
         fprintf(stderr, "[GLFW-ERR] Error (%d):\t\t%s\n", code, description);
 }
 
-void adapter_callback(WGPURequestAdapterStatus status, WGPUAdapter adapter,
-                      struct WGPUStringView message, void *userdata1,
-                      void *userdata2)
+static void adapter_callback(WGPURequestAdapterStatus status,
+                             WGPUAdapter adapter, struct WGPUStringView message,
+                             void *userdata1, void *userdata2)
 {
+    char mbuf[message.length + 1];
+    snprintf(mbuf, message.length + 1, "%s", message.data);
     if (status != WGPURequestAdapterStatus_Success) {
-        char mbuf[message.length + 1];
-        snprintf(mbuf, message.length + 1, "%s", message.data);
-        fprintf(stderr, "[ERR] Request Adapter callback not successfull: %s\n",
+        fprintf(stderr, "[ERR] Request Adapter callback unsuccessful: %s\n",
                 mbuf);
         return;
     }
     memmove(userdata1, &adapter, sizeof(WGPUAdapter));
+    printf(LOG_PREFIX " request_adapter status=%#.8x message=%s\n", status,
+           mbuf);
 }
 
-void logging_callback(WGPULoggingType type, struct WGPUStringView message,
-                      WGPU_NULLABLE void *userdata1,
-                      WGPU_NULLABLE void *userdata2)
+static void device_callback(WGPURequestDeviceStatus status, WGPUDevice device,
+                            WGPUStringView message, void *userdata1,
+                            void *userdata2)
 {
-    char mbuf[message.length + 1];
-    snprintf(mbuf, message.length + 1, "%s", message.data);
-
-    switch (type) {
-    case WGPULoggingType_Warning:
-    case WGPULoggingType_Error:
-    case WGPULoggingType_Force32:
-        fprintf(stderr, "[%s] (%d)\t%s\n",
-                ((type == WGPULoggingType_Warning)   ? "WARN"
-                 : (type == WGPULoggingType_Force32) ? "FRC32"
-                                                     : "ERR"),
-                *( int * )userdata1, mbuf);
-        break;
-    case WGPULoggingType_Info:
-    case WGPULoggingType_Verbose:
-        printf("[%s] (%d)\t%s\n",
-               ((type == WGPULoggingType_Verbose) ? "VERB" : "INFO"),
-               *( int * )userdata1, mbuf);
-        break;
+    if (status != WGPURequestDeviceStatus_Success) {
+        char mbuf[message.length + 1];
+        snprintf(mbuf, message.length + 1, "%s", message.data);
+        fprintf(stderr, "[ERR] Request Device callback unsuccessful: %s\n",
+                mbuf);
+        return;
     }
+    memmove(userdata1, &device, sizeof(WGPUDevice));
+    printf(LOG_PREFIX " request_device status=%#.8x message=%.*s\n", status,
+           ( int )message.length, message.data);
 }
 
 void exception_callback(const WGPUDevice *device, WGPUErrorType type,
@@ -309,8 +283,8 @@ void lost_callback(const WGPUDevice *device, WGPUDeviceLostReason reason,
     case WGPUDeviceLostReason_Destroyed:
         fprintf(stderr, "Destroyed: %s\n", mbuf);
         break;
-    case WGPUDeviceLostReason_CallbackCancelled:
-        fprintf(stderr, "Callback Cancelled: %s\n", mbuf);
+    case WGPUDeviceLostReason_InstanceDropped:
+        fprintf(stderr, "Instance Dropped: %s\n", mbuf);
         break;
     case WGPUDeviceLostReason_FailedCreation:
         fprintf(stderr, "Failed Creation: %s\n", mbuf);
@@ -323,17 +297,18 @@ void lost_callback(const WGPUDevice *device, WGPUDeviceLostReason reason,
     return;
 }
 
-WGPUDevice create_general_device()
+struct WGPUState create_general_device()
 {
     if (glfwInit() != GLFW_TRUE) {
         fprintf(stderr, "Unable to initialise glfw3\n");
-        return NULL;
+        return state;
     }
     glfwSetErrorCallback(error_callback);
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    window = glfwCreateWindow(xWin, yWin, "window", NULL, NULL);
-    if (window == NULL) {
+    state.window = glfwCreateWindow(xWin, yWin, "window", NULL, NULL);
+    if (state.window == NULL) {
         const char *description;
         int         code = glfwGetError(&description);
         if (description)
@@ -341,127 +316,178 @@ WGPUDevice create_general_device()
                     "[GLFW-ERR] Unable to create glfw3 window (%d): %s\n", code,
                     description);
         glfwTerminate();
-        return NULL;
+        return state;
     }
 
-    WGPUInstanceDescriptor instanceDesc = WGPU_INSTANCE_DESCRIPTOR_INIT;
-    instanceDesc.capabilities.timedWaitAnyEnable = true;
-    WGPUInstance instance = wgpuCreateInstance(&instanceDesc);
-    if (instance == NULL) {
+    state.instance = wgpuCreateInstance(NULL);
+    if (state.instance == NULL) {
         fprintf(stderr, "[ERR] Unable to create WGPU instance\n");
-        glfwDestroyWindow(window);
+        glfwDestroyWindow(state.window);
         glfwTerminate();
-        return NULL;
+        return state;
     }
 
-    WGPUSurface backendSurface = glfwCreateWindowWGPUSurface(instance, window);
-    // if (surface == NULL) {
-    //     fprintf(stderr, "[ERR] Unable to create surface for window\n");
-    //     glfwDestroyWindow(window);
-    //     glfwTerminate();
-    //     return NULL;
-    // }
+#if defined(GLFW_EXPOSE_NATIVE_COCOA)
+    {
+        id        metal_layer = NULL;
+        NSWindow *ns_window   = glfwGetCocoaWindow(state.window);
+        [ns_window.contentView setWantsLayer:YES];
+        metal_layer = [CAMetalLayer layer];
+        [ns_window.contentView setLayer:metal_layer];
+        state.surface = wgpuInstanceCreateSurface(
+                state.instance,
+                &( const WGPUSurfaceDescriptor ){
+                        .nextInChain =
+                                ( const WGPUChainedStruct * )&(
+                                        const WGPUSurfaceSourceMetalLayer ){
+                                        .chain =
+                                                ( const WGPUChainedStruct ){
+                                                        .sType =
+                                                                WGPUSType_SurfaceSourceMetalLayer,
+                                                },
+                                        .layer = metal_layer,
+                                },
+                });
+    }
+#elif defined(GLFW_EXPOSE_NATIVE_WAYLAND) && defined(GLFW_EXPOSE_NATIVE_X11)
+    if (glfwGetPlatform() == GLFW_PLATFORM_X11) {
+        Display *x11_display = glfwGetX11Display();
+        Window   x11_window  = glfwGetX11Window(state.window);
+        state.surface        = wgpuInstanceCreateSurface(
+                state.instance,
+                &( const WGPUSurfaceDescriptor ){
+                               .nextInChain =
+                                ( const WGPUChainedStruct * )&(
+                                        const WGPUSurfaceSourceXlibWindow ){
+                                               .chain =
+                                                ( const WGPUChainedStruct ){
+                                                               .sType =
+                                                                WGPUSType_SurfaceSourceXlibWindow,
+                                                },
+                                               .display = x11_display,
+                                               .window  = x11_window,
+                                },
+                });
+    }
+    if (glfwGetPlatform() == GLFW_PLATFORM_WAYLAND) {
+        struct wl_display *wayland_display = glfwGetWaylandDisplay();
+        struct wl_surface *wayland_surface = glfwGetWaylandWindow(state.window);
+        state.surface                      = wgpuInstanceCreateSurface(
+                state.instance,
+                &( const WGPUSurfaceDescriptor ){
+                                             .nextInChain =
+                                ( const WGPUChainedStruct * )&(
+                                        const WGPUSurfaceSourceWaylandSurface ){
+                                                             .chain =
+                                                ( const WGPUChainedStruct ){
+                                                                             .sType =
+                                                                WGPUSType_SurfaceSourceWaylandSurface,
+                                                },
+                                                             .display = wayland_display,
+                                                             .surface = wayland_surface,
+                                },
+                });
+    }
+#elif defined(GLFW_EXPOSE_NATIVE_WIN32)
+    {
+        HWND      hwnd      = glfwGetWin32Window(state.window);
+        HINSTANCE hinstance = GetModuleHandle(NULL);
+        state.surface       = wgpuInstanceCreateSurface(
+                state.instance,
+                &( const WGPUSurfaceDescriptor ){
+                              .nextInChain =
+                                ( const WGPUChainedStruct * )&(
+                                        const WGPUSurfaceSourceWindowsHWND ){
+                                              .chain =
+                                                ( const WGPUChainedStruct ){
+                                                              .sType =
+                                                                WGPUSType_SurfaceSourceWindowsHWND,
+                                                },
+                                              .hinstance = hinstance,
+                                              .hwnd      = hwnd,
+                                },
+                });
+    }
+#else
+#error "Unsupported GLFW native platform"
+#endif
 
     WGPURequestAdapterOptions options = {0};
     options.nextInChain               = NULL;
-    options.compatibleSurface         = backendSurface;
+    options.featureLevel              = WGPUFeatureLevel_Core;
+    options.compatibleSurface         = state.surface;
 
-#ifdef GLFW_EXPOSE_NATIVE_COCOA
-    options.backendType = WGPUBackendType_Metal;
-#endif /* GLFW_EXPOSE_NATIVE_COCOA */
-
-    WGPUAdapter                    adapter      = {0};
     WGPURequestAdapterCallbackInfo callbackInfo = {0};
     callbackInfo.mode                           = WGPUCallbackMode_WaitAnyOnly;
-    callbackInfo.userdata1                      = &adapter;
+    callbackInfo.userdata1                      = &state.adapter;
     callbackInfo.callback                       = adapter_callback;
 
-    WGPUFuture future =
-            wgpuInstanceRequestAdapter(instance, &options, callbackInfo);
-    WGPUFutureWaitInfo futureInfo = {.future = future, .completed = false};
-    WGPUWaitStatus     waitStatus =
-            wgpuInstanceWaitAny(instance, 1, &futureInfo, UINT64_MAX);
-    struct timespec ts;
-    ts.tv_sec  = 0;
-    ts.tv_nsec = 200 * 1000;
-    while (!futureInfo.completed) {
-        printf("[ERR] Waiting for future to complete...\n");
-        nanosleep(&ts, NULL);
-    }
-    if (waitStatus != WGPUWaitStatus_Success) {
-        fprintf(stderr, "[ERR] Unsuccessful instance wait any call\n");
-        glfwDestroyWindow(window);
-        glfwTerminate();
-        return NULL;
-    }
-    if (callbackInfo.userdata1 == NULL) {
+    wgpuInstanceRequestAdapter(state.instance, &options, callbackInfo);
+    if (state.adapter == NULL) {
         fprintf(stderr, "[ERR] Unable to get adapter from instance\n");
-        glfwDestroyWindow(window);
+        glfwDestroyWindow(state.window);
         glfwTerminate();
-        return NULL;
+        return state;
     }
 
-    WGPUAdapterInfo adapterInfo = WGPU_ADAPTER_INFO_INIT;
-    WGPUStatus      infoStatus  = wgpuAdapterGetInfo(adapter, &adapterInfo);
+    WGPUAdapterInfo adapterInfo = {0};
+    WGPUStatus infoStatus = wgpuAdapterGetInfo(state.adapter, &adapterInfo);
     if (infoStatus != WGPUStatus_Success) {
         fprintf(stderr, "[ERR] Unable to get adapter info\n");
-        glfwDestroyWindow(window);
+        glfwDestroyWindow(state.window);
         glfwTerminate();
-        return NULL;
+        return state;
     }
 
-    WGPUDeviceDescriptor deviceDesc = WGPU_DEVICE_DESCRIPTOR_INIT;
+    WGPUDeviceDescriptor            deviceDesc    = {0};
+    WGPUUncapturedErrorCallbackInfo exceptionInfo = {0};
+    exceptionInfo.callback                        = exception_callback;
+    exceptionInfo.userdata1                       = &adapterInfo.deviceID;
+    deviceDesc.uncapturedErrorCallbackInfo        = exceptionInfo;
+    WGPUDeviceLostCallbackInfo lostInfo           = {0};
+    lostInfo.mode                     = WGPUCallbackMode_AllowSpontaneous;
+    lostInfo.callback                 = lost_callback;
+    lostInfo.userdata1                = &adapterInfo.deviceID;
+    deviceDesc.deviceLostCallbackInfo = lostInfo;
 
-    WGPUUncapturedErrorCallbackInfo exceptionInfo =
-            WGPU_UNCAPTURED_ERROR_CALLBACK_INFO_INIT;
-    exceptionInfo.callback                 = exception_callback;
-    exceptionInfo.userdata1                = &adapterInfo.deviceID;
-    deviceDesc.uncapturedErrorCallbackInfo = exceptionInfo;
-    WGPUDeviceLostCallbackInfo lostInfo = WGPU_DEVICE_LOST_CALLBACK_INFO_INIT;
-    lostInfo.mode                       = WGPUCallbackMode_AllowSpontaneous;
-    lostInfo.callback                   = lost_callback;
-    lostInfo.userdata1                  = &adapterInfo.deviceID;
-    deviceDesc.deviceLostCallbackInfo   = lostInfo;
-
-    WGPUDevice backendDevice = wgpuAdapterCreateDevice(adapter, &deviceDesc);
-    if (backendDevice == NULL) {
+    wgpuAdapterRequestDevice(
+            state.adapter, &deviceDesc,
+            ( const WGPURequestDeviceCallbackInfo ){
+                    .callback = device_callback, .userdata1 = &state.device});
+    if (state.device == NULL) {
         fprintf(stderr, "[ERR] Unable to create device from adapter\n");
-        glfwDestroyWindow(window);
+        glfwDestroyWindow(state.window);
         glfwTerminate();
-        return NULL;
+        return state;
     }
 
-    // WGPUSurfaceConfiguration surfaceConfig = WGPU_SURFACE_CONFIGURATION_INIT;
-    // surfaceConfig.device                   = backendDevice;
-    // surfaceConfig.width                    = xWin;
-    // surfaceConfig.height                   = yWin;
-    // wgpuSurfaceConfigure(backendSurface, &surfaceConfig);
-
-    WGPUDevice device = NULL;
+    WGPUSurfaceCapabilities surface_capabilities = {0};
+    wgpuSurfaceGetCapabilities(state.surface, state.adapter,
+                               &surface_capabilities);
+    state.surfaceConfig.nextInChain = NULL;
+    state.surfaceConfig.device      = state.device;
+    state.surfaceConfig.width       = xWin;
+    state.surfaceConfig.height      = yWin;
+    state.surfaceConfig.usage       = WGPUTextureUsage_RenderAttachment,
+    state.surfaceConfig.format      = surface_capabilities.formats[0],
+    state.surfaceConfig.presentMode = WGPUPresentMode_Fifo,
+    state.surfaceConfig.alphaMode   = surface_capabilities.alphaModes[0],
+    wgpuSurfaceConfigure(state.surface, &state.surfaceConfig);
 
     // switch (cmd_buf_t) {
     // case None:
     // case None:
-    device  = backendDevice;
-    surface = backendSurface;
+    // device = backendDevice;
     //     break;
     // case Terrible:
     //     break;
     // };
 
-    WGPULoggingCallbackInfo loggingInfo = WGPU_LOGGING_CALLBACK_INFO_INIT;
-    loggingInfo.callback                = logging_callback;
-    loggingInfo.userdata1               = &adapterInfo.deviceID;
-    wgpuDeviceSetLoggingCallback(device, loggingInfo);
-
-    wgpuInstanceRelease(instance);
-    wgpuAdapterRelease(adapter);
-
-    return device;
+    return state;
 }
 
-GLFWwindow *get_glfw_window() { return window; }
+GLFWwindow *get_glfw_window() { return state.window; }
 
-WGPUSurface get_surface() { return surface; }
+WGPUSurface get_surface() { return state.surface; }
 
 // vim: set ft=c ts=4 sts=4 sw=4 et cin ai nospell
